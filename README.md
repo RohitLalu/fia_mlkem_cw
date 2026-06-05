@@ -1,10 +1,11 @@
 # Welcome to FIA attacks that I have tried upon using ChipWhisperer
-\\
+\
 I have personally have worked on only the examples in the Jupyter Notebooks provided in the courses. The results I have shared are part of the
 same file under jupyter/fault101 in the software.
 I have exclusively worked on the STM32F3 Target Board which is based on an ARM Cortex M4 microcontroller architecture.
-\\
-#NOTE: My results have worked for me and these settings are closely resembling the defaults as well. I have modified the notebooks to understand stuff better.
+\
+# NOTE:
+My results have worked for me and these settings are closely resembling the defaults as well. I have modified the notebooks to understand stuff better.
 I hav also added comments which makes this slightly more easier to understand.
 
 FYI:
