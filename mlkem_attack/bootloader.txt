@@ -1,0 +1,99 @@
+
+#include "hal.h"
+#include "simpleserial.h"
+#include "api.h"
+#include <stdint.h>
+#include <string.h>
+#include <stdlib.h> // random seed gen
+
+//  ML-KEM-512 parameters
+#ifndef CRYPTO_PUBLICKEYBYTES
+#define CRYPTO_PUBLICKEYBYTES 800
+#endif
+
+#ifndef CRYPTO_SECRETKEYBYTES
+#define CRYPTO_SECRETKEYBYTES 1632
+#endif
+
+#define SEED_BUFFER_SIZE 64
+
+// Global static allocations
+uint8_t public_key[CRYPTO_PUBLICKEYBYTES];
+uint8_t secret_key[CRYPTO_SECRETKEYBYTES];
+
+uint8_t golden_seeds[SEED_BUFFER_SIZE];
+
+// random 64 byte seed generation 
+//'g':gen
+uint8_t random_byte_gen(uint8_t cmd, uint8_t scmd, uint8_t len, uint8_t *buf)
+{
+        uint8_t random_buffer[SEED_BUFFER_SIZE];
+    srand((unsigned int)get_cyclecount());
+    for (int i = 0; i < SEED_BUFFER_SIZE; i++) {
+        random_buffer[i] = (uint8_t)(rand() & 0xFF); 
+    }
+    memcpy(golden_seeds, random_buffer, SEED_BUFFER_SIZE);
+//     golden_seeds[SEED_BUFFER_SIZE] = {
+//     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+//     0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+//     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+//     0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, // End of domain seed 'd'
+//     0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+//     0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+//     0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+//     0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f  // End of noise seed 'z'
+// };
+    simpleserial_put('r', SEED_BUFFER_SIZE, random_buffer); // SEND TO API FOR GOLDEN RUN
+    return 0x00;
+}
+
+
+// 'b':buffer clear
+uint8_t target_sync(uint8_t cmd, uint8_t scmd, uint8_t len, uint8_t *buf)
+{
+    // Clear legacy buffers to avoid stale fault contamination
+    memset(public_key, 0, CRYPTO_PUBLICKEYBYTES);
+    memset(secret_key, 0, CRYPTO_SECRETKEYBYTES);
+    return 0x00; // Explicit return code acts as SimpleSerial ACK handshake validation
+}
+
+// 'k': keys
+uint8_t trigger_keygen(uint8_t cmd, uint8_t scmd, uint8_t len, uint8_t *buf)
+{
+    // Attack starts here
+    trigger_high();
+    crypto_kem_keypair_deriver(public_key, secret_key, golden_seeds);
+    trigger_low();
+    
+    simpleserial_put('r', CRYPTO_PUBLICKEYBYTES, public_key);
+    return 0x00;
+}
+
+ // 's': secret key
+uint8_t secret_key_reveal(uint8_t cmd, uint8_t scmd, uint8_t len, uint8_t *buf) //use for debug only, not for actual keygen attack
+{
+    simpleserial_put('r', CRYPTO_SECRETKEYBYTES, secret_key);
+    return 0x00;
+}
+
+
+
+int main(void)
+{
+    // Peripheral isolation initialisation
+    platform_init();
+    init_uart();
+    trigger_setup();
+    simpleserial_init();
+
+    // Map handlers to interface hooks matching your notebook loop logic
+    simpleserial_addcmd('b', 0x00, target_sync);    // To clean buffers
+    simpleserial_addcmd('g',0x00, random_byte_gen); // Handshake to start random byt gen
+    simpleserial_addcmd('k', 0x00, trigger_keygen); // Handshake to start keygen 
+    simpleserial_addcmd('s',0x00, secret_key_reveal); // Only to be used for debug since sk is not revealed
+
+    while(1) {
+        simpleserial_get();
+    }
+    return 0;
+}
